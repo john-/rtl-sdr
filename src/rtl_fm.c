@@ -83,6 +83,8 @@
 #define AUTO_GAIN			-100
 #define BUFFER_DUMP			4096
 #define MAXIMUM_RATE			2400000
+#define SQUELCH_OPEN                    1
+#define SQUELCH_CLOSED                  0
 
 #define FREQUENCIES_LIMIT		1000
 
@@ -97,6 +99,7 @@ static uint32_t MINIMUM_RATE = 1000000;
 static int *atan_lut = NULL;
 static int atan_lut_size = 131072; /* 512 KB */
 static int atan_lut_coef = 8;
+static int freqd = 0;   /* I am thinking this global is ugly and about to get worse */
 
 // rewrite as dynamic and thread-safe for multi demod/dongle
 #define SHARED_SIZE 6
@@ -854,6 +857,16 @@ void software_agc(struct demod_state *d)
 	}
 }
 
+void send_message(int squelch)
+{
+        if (SQUELCH_OPEN == squelch) {
+	    fprintf(stderr, "OPEN|freq,%10u,Hz\n", freqd);
+        } else {
+	    fprintf(stderr, "CLOSED|freq,%10u,Hz\n", freqd);
+        }
+}
+
+
 void full_demod(struct demod_state *d)
 {
 	int i, ds_p;
@@ -890,8 +903,10 @@ void full_demod(struct demod_state *d)
 		for (i=0; i<d->lp_len; i++) {
 			d->lowpassed[i] = 0;
 		}
+		send_message(SQUELCH_CLOSED);
 	} else {
 		d->squelch_hits = 0;
+		send_message(SQUELCH_OPEN);
 	}
 	if (d->squelch_level && d->squelch_hits > d->conseq_squelch) {
 		d->agc->gain_num = d->agc->gain_den;
@@ -1225,6 +1240,9 @@ static void *controller_thread_fn(void *arg)
 	}
 
 	/* set up primary channel */
+        freqd = s->freqs[s->freq_now];
+        if (s->wb_mode) {
+	  freqd -= 16000;}
 	optimal_settings(s->freqs[0], demod.rate_in);
 	demod.squelch_level = squelch_to_rms(demod.squelch_level, &dongle, &demod);
 	if (dongle.direct_sampling) {
@@ -1256,6 +1274,9 @@ static void *controller_thread_fn(void *arg)
 			continue;}
 		/* hacky hopping */
 		s->freq_now = (s->freq_now + 1) % s->freq_len;
+                freqd = s->freqs[s->freq_now];
+		if (s->wb_mode) {
+		  freqd -= 16000;}
 		optimal_settings(s->freqs[s->freq_now], demod.rate_in);
 		rtlsdr_set_center_freq(dongle.dev, dongle.freq);
 		dongle.mute = BUFFER_DUMP;
