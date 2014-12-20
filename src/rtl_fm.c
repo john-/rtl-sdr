@@ -859,11 +859,18 @@ void software_agc(struct demod_state *d)
 
 void send_message(int squelch)
 {
+        static int prior_squelch = -1;
+
+	if (prior_squelch == squelch) { 
+            return;}
+
         if (SQUELCH_OPEN == squelch) {
-	    fprintf(stderr, "OPEN|freq,%10u,Hz\n", freqd);
+	    fprintf(stderr, "OPEN|%u\n", freqd);
         } else {
-	    fprintf(stderr, "CLOSED|freq,%10u,Hz\n", freqd);
+	    fprintf(stderr, "CLOSED|%u\n", freqd);
         }
+
+	prior_squelch = squelch;
 }
 
 
