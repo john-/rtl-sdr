@@ -199,6 +199,7 @@ struct output_state
 	FILE     *file;
 	char     *filename;
         int      multifile;
+        char     *multidir;
 	struct buffer_bucket results[2];
 	int      rate;
 	int      wav_format;
@@ -872,7 +873,7 @@ void send_message(int squelch)
 	        time_t t = time(NULL);
 	        struct tm tm = *localtime(&t);
 
-	        sprintf(output.filename, "%u-%4d%02d%02d%02d%02d%02d.audio", freqd, 
+	        sprintf(output.filename, "%s/%u-%4d%02d%02d%02d%02d%02d.audio", output.multidir, freqd, 
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 	        //sprintf(output.filename, "%d-%d", freqd, ++output.filecount);
 	        // open file
@@ -1512,7 +1513,7 @@ int main(int argc, char **argv)
 	output_init(&output);
 	controller_init(&controller);
 
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:l:o:t:r:p:E:F:A:M:h:n")) != -1) {
+	while ((opt = getopt(argc, argv, "d:f:g:s:b:l:o:t:r:p:E:F:A:M:h:n:")) != -1) {
 		switch (opt) {
 		case 'd':
 			dongle.dev_index = verbose_device_search(optarg);
@@ -1562,6 +1563,7 @@ int main(int argc, char **argv)
 			break;
 		case 'n':
                         output.multifile = 1;
+			output.multidir = optarg;
 			break;
 		case 'E':
 			if (strcmp("edge",  optarg) == 0) {
