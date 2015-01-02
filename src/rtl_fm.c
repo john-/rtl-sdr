@@ -99,7 +99,6 @@ static uint32_t MINIMUM_RATE = 1000000;
 static int *atan_lut = NULL;
 static int atan_lut_size = 131072; /* 512 KB */
 static int atan_lut_coef = 8;
-static int freqd = 0;   /* I am thinking this global is ugly and about to get worse */
 
 // rewrite as dynamic and thread-safe for multi demod/dongle
 #define SHARED_SIZE 6
@@ -199,6 +198,7 @@ struct output_state
 	pthread_t thread;
 	FILE     *file;
 	char     *filename;
+        int      multifile;
 	struct buffer_bucket results[2];
 	int      rate;
 	int      wav_format;
@@ -258,6 +258,7 @@ void usage(void)
 		"\t    pad:    pad output gaps with zeros\n"
 		"\t    lrmix:  one channel goes to left audio, one to right (broken)\n"
 		"\t            remember to enable stereo (-c 2) in sox\n"
+		"\t[-n generate output files for each transmission]\n"
 		"\tfilename ('-' means stdout)\n"
 		"\t    omitting the filename also uses stdout\n\n"
 		"Experimental options:\n"
@@ -861,13 +862,34 @@ void send_message(int squelch)
 {
         static int prior_squelch = -1;
 
-	if (prior_squelch == squelch) { 
+	int freqd = controller.freqs[controller.freq_now];
+
+	if (prior_squelch == squelch || output.multifile == 0) { 
             return;}
 
         if (SQUELCH_OPEN == squelch) {
-	    fprintf(stderr, "OPEN|%u\n", freqd);
+	        // set new file name
+	        time_t t = time(NULL);
+	        struct tm tm = *localtime(&t);
+
+	        sprintf(output.filename, "%u-%4d%02d%02d%02d%02d%02d.audio", freqd, 
+			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	        //sprintf(output.filename, "%d-%d", freqd, ++output.filecount);
+	        // open file
+	        output.file = fopen(output.filename, "wb");
+	        if (!output.file) {
+		    fprintf(stderr, "Failed to open %s\n", output.filename);
+		    exit(1);   // I expect this is especially bad
+	        }
+	        if (output.wav_format) {
+		  //generate_header(&demod, &output);
+	        }
+
+	        fprintf(stderr, "OPEN|%u|%s\n", freqd, output.filename);
         } else {
-	    fprintf(stderr, "CLOSED|%u\n", freqd);
+	        fprintf(stderr, "CLOSED|%u\n", controller.freqs[controller.freq_now]);
+	        // close file
+	        fclose(output.file);
         }
 
 	prior_squelch = squelch;
@@ -910,7 +932,8 @@ void full_demod(struct demod_state *d)
 		for (i=0; i<d->lp_len; i++) {
 			d->lowpassed[i] = 0;
 		}
-		send_message(SQUELCH_CLOSED);
+		// this hack intends to catch first time through
+		if (d->squelch_hits != 12) { send_message(SQUELCH_CLOSED); }
 	} else {
 		d->squelch_hits = 0;
 		send_message(SQUELCH_OPEN);
@@ -1247,9 +1270,6 @@ static void *controller_thread_fn(void *arg)
 	}
 
 	/* set up primary channel */
-        freqd = s->freqs[s->freq_now];
-        if (s->wb_mode) {
-	  freqd -= 16000;}
 	optimal_settings(s->freqs[0], demod.rate_in);
 	demod.squelch_level = squelch_to_rms(demod.squelch_level, &dongle, &demod);
 	if (dongle.direct_sampling) {
@@ -1281,9 +1301,6 @@ static void *controller_thread_fn(void *arg)
 			continue;}
 		/* hacky hopping */
 		s->freq_now = (s->freq_now + 1) % s->freq_len;
-                freqd = s->freqs[s->freq_now];
-		if (s->wb_mode) {
-		  freqd -= 16000;}
 		optimal_settings(s->freqs[s->freq_now], demod.rate_in);
 		rtlsdr_set_center_freq(dongle.dev, dongle.freq);
 		dongle.mute = BUFFER_DUMP;
@@ -1495,7 +1512,7 @@ int main(int argc, char **argv)
 	output_init(&output);
 	controller_init(&controller);
 
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:l:o:t:r:p:E:F:A:M:h")) != -1) {
+	while ((opt = getopt(argc, argv, "d:f:g:s:b:l:o:t:r:p:E:F:A:M:h:n")) != -1) {
 		switch (opt) {
 		case 'd':
 			dongle.dev_index = verbose_device_search(optarg);
@@ -1542,6 +1559,9 @@ int main(int argc, char **argv)
 		case 'p':
 			dongle.ppm_error = atoi(optarg);
 			custom_ppm = 1;
+			break;
+		case 'n':
+                        output.multifile = 1;
 			break;
 		case 'E':
 			if (strcmp("edge",  optarg) == 0) {
@@ -1679,7 +1699,7 @@ int main(int argc, char **argv)
 #ifdef _WIN32
 		_setmode(_fileno(output.file), _O_BINARY);
 #endif
-	} else {
+	} else if (output.multifile == 0) {
 		output.file = fopen(output.filename, "wb");
 		if (!output.file) {
 			fprintf(stderr, "Failed to open %s\n", output.filename);
@@ -1687,7 +1707,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (output.wav_format) {
+	if (output.wav_format && output.multifile == 0) {
 		generate_header(&demod, &output);
 	}
 
@@ -1733,7 +1753,7 @@ int main(int argc, char **argv)
 	output_cleanup(&output);
 	controller_cleanup(&controller);
 
-	if (output.file != stdout) {
+	if (output.file != stdout && output.multifile == 0) {
 		fclose(output.file);}
 
 	rtlsdr_close(dongle.dev);
