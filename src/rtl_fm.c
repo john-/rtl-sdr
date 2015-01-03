@@ -888,7 +888,7 @@ void send_message(int squelch)
 
 	        fprintf(stderr, "OPEN|%u|%s\n", freqd, output.filename);
         } else {
-	        fprintf(stderr, "CLOSED|%u\n", controller.freqs[controller.freq_now]);
+	        fprintf(stderr, "CLOSED|%u|%s\n", freqd, output.filename);
 	        // close file
 	        fclose(output.file);
         }
