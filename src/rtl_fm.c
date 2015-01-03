@@ -861,6 +861,7 @@ void software_agc(struct demod_state *d)
 
 void send_message(int squelch)
 {
+        int generate_header(struct demod_state *, struct output_state *);
         static int prior_squelch = -1;
 
 	int freqd = controller.freqs[controller.freq_now];
@@ -883,7 +884,7 @@ void send_message(int squelch)
 		    exit(1);   // I expect this is especially bad
 	        }
 	        if (output.wav_format) {
-		  //generate_header(&demod, &output);
+		  generate_header(&demod, &output);
 	        }
 
 	        fprintf(stderr, "OPEN|%u|%s\n", freqd, output.filename);
